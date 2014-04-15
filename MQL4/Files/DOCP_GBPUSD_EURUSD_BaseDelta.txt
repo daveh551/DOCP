@@ -1,0 +1,4 @@
+DataVersion: 2
+BaseDelta: -0.28763
+BaseValue: 1.37937
+Time: 2014.04.14 05:12:32

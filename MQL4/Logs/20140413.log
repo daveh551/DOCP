@@ -1,0 +1,61 @@
+16:24:33 Compiling 'MACD Sample'
+16:24:34 Compiling 'Moving Average'
+16:24:35 Compiling 'Accelerator'
+16:24:36 Compiling 'Accumulation'
+16:24:38 Compiling 'Alligator'
+16:24:39 Compiling 'ATR'
+16:24:40 Compiling 'Awesome'
+16:24:41 Compiling 'Bands'
+16:24:42 Compiling 'Bears'
+16:24:43 Compiling 'Bulls'
+16:24:44 Compiling 'CCI'
+16:24:45 Compiling 'Custom Moving Averages'
+16:24:46 Compiling 'Heiken Ashi'
+16:24:47 Compiling 'Ichimoku'
+16:24:48 Compiling 'iExposure'
+16:24:49 Compiling 'MACD'
+16:24:50 Compiling 'Momentum'
+16:24:52 Compiling 'OsMA'
+16:24:53 Compiling 'Parabolic'
+16:24:54 Compiling 'RSI'
+16:24:55 Compiling 'Stochastic'
+16:24:56 Compiling 'ZigZag'
+16:24:57 Compiling 'Examples\SimplePanel\SimplePanel'
+16:24:59 Compiling 'PeriodConverter'
+16:25:00 Compiling 'Examples\DLL\DLLSampleTester'
+16:25:01 Compiling 'Examples\Pipes\PipeClient'
+16:25:02 Compiling 'Examples\Pipes\PipeClientPure'
+16:25:03 Compiling 'stdlib'
+16:29:02 Compiling 'DOCP'
+16:29:03 Compiling 'Divergence'
+16:29:04 Compiling 'DOCP'
+16:29:22 Custom indicator DOCP GBPUSD.,M1: loaded successfully
+16:29:28 DOCP GBPUSD.,M1: initialized
+16:30:22 Custom indicator Divergence GBPUSD.,M1: loaded successfully
+16:30:25 Divergence GBPUSD.,M1: initialized
+16:30:25 Custom indicator DOCP GBPUSD.,M1: loaded successfully
+16:30:25 DOCP GBPUSD.,M1: initialized
+16:34:18 Expert DOCP GBPUSD.,M1: loaded successfully
+16:34:22 DOCP GBPUSD.,M1: ---------------------------------------------------------
+16:34:22 DOCP GBPUSD.,M1: -----Divergence Of Correlated Pairs (DOCP) v0.10 Initializing GBPUSD.-----
+16:34:22 DOCP GBPUSD.,M1: Alert: TradeSize has been increased to Minimum LotSize of 10000.0
+16:34:22 DOCP GBPUSD.,M1: initialized
+16:34:27 Custom indicator Divergence GBPUSD.,M1: loaded successfully
+16:34:27 Divergence GBPUSD.,M1: initialized
+16:34:27 Custom indicator DOCP GBPUSD.,M1: loaded successfully
+16:34:27 DOCP GBPUSD.,M1: initialized
+16:54:55 DOCP GBPUSD.,M1: uninit reason 1
+16:54:55 Divergence GBPUSD.,M1: uninit reason 1
+16:54:55 DOCP GBPUSD.,M1: uninit reason 1
+16:54:55 Custom indicator DOCP GBPUSD.,M1: removed
+16:54:55 Custom indicator Divergence GBPUSD.,M1: removed
+16:54:55 Expert DOCP GBPUSD.,M1: removed
+16:57:38 Expert DOCP GBPUSD.,M1: loaded successfully
+16:57:43 DOCP GBPUSD.,M1: ---------------------------------------------------------
+16:57:43 DOCP GBPUSD.,M1: -----Divergence Of Correlated Pairs (DOCP) v0.10 Initializing GBPUSD.-----
+16:57:43 DOCP GBPUSD.,M1: initialized
+16:57:44 Custom indicator Divergence GBPUSD.,M1: loaded successfully
+16:57:44 Divergence GBPUSD.,M1: initialized
+16:57:44 Custom indicator DOCP GBPUSD.,M1: loaded successfully
+16:57:44 DOCP GBPUSD.,M1: initialized
+20:08:07 Automated trading enabled
