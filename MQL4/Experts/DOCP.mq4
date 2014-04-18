@@ -194,54 +194,81 @@ void OpenTrade(double divergence)
 
 void FindOpenTrades()
 {
-   int totalOrders = OrdersTotal();
-   int countThisSymbol =0;
-   int countOtherSymbol = 0;
-   ArrayResize(allOrders, totalOrders);
-   for(int ix=0;ix<totalOrders;ix++)   
+   ReadStoredTrades();
+   
+   // Have to validate the openTrades found in the ReadStoredTrades file.
+   // Two possibilities for invalidation:
+   //    a) Trades recorded there are no longer active
+   //    b) Trades that are active aren't recorded there
+   // Validate all  orders recorded
+   bool tradeValidated[];
+   int numOpenTrades = ArrayRange(openTrades, 0);
+   ArrayResize(tradeValidated, numOpenTrades);
+   for(int ix=0;ix<numOpenTrades;ix++)
      {
-      if (OrderSelect(ix,SELECT_BY_POS))
-      {
-         allOrders[ix].TicketId = OrderTicket();
-         allOrders[ix].OrderType = OrderType();
-         allOrders[ix].EntryPrice = OrderOpenPrice();
-         allOrders[ix].EntryTime = OrderOpenTime();
-         allOrders[ix].Symbol = OrderSymbol();
-         if(allOrders[ix].Symbol == _Symbol)
-           {
-            countThisSymbol++;
-           }
-         if(allOrders[ix].Symbol == otherPair)
-           {
-            countOtherSymbol++;
-           }
-      }
-      else
-        {
-         Alert("OrderSelect failed: Error=", GetLastError());
-        }
+         tradeValidated[ix] =
+            (OrderSelect(openTrades[ix].BuyTrade.TicketId, SELECT_BY_TICKET) &&
+            OrderCloseTime() == 0 && 
+            OrderSelect(openTrades[ix].SellTrade.TicketId, SELECT_BY_TICKET) &&
+            OrderCloseTime() == 0);
+         if (tradeValidated[ix])
+         {
+            numberOfOpenTrades = ix + 1;
+            lastDivergenceLevel = openTrades[ix].divergenceLevel;
+         }
      }
-   ArrayResize(thisPairTickets, countThisSymbol);
-   ArrayResize(otherPairTickets, countOtherSymbol);
-   countThisSymbol = 0;
-   countOtherSymbol = 0;
+    for(int ix=0;ix<numOpenTrades;ix++)
+      {
+       if(tradeValidated[ix] == false)
+       // Need to remove that trade from the array
+         {
+          for(int jx=ix;jx<numOpenTrades-1;jx++)
+            {
+             openTrades[jx] = openTrades[jx-1];
+             tradeValidated[jx] = tradeValidated[jx-1];
+            }
+           numOpenTrades--;
+           ix--;
+           ArrayResize(openTrades, numOpenTrades);
+         }
+      }
+   
+   // Now make  sure all open trades are accounted for in openTrades
+   int totalOrders = OrdersTotal();
+   OrderInfo *unmatchedTrades[];
+   int numUnMatchedTrades = 0;
    for(int ix=0;ix<totalOrders;ix++)
      {
-      if(allOrders[ix].Symbol == _Symbol)
-        {
-         thisPairTickets[countThisSymbol++] = allOrders[ix].TicketId;
-         
-        }
-      if(allOrders[ix].Symbol == otherPair)
-        {
-         otherPairTickets[countOtherSymbol++] = allOrders[ix].TicketId;
-        }
+         if (OrderSelect(ix, SELECT_BY_POS, MODE_TRADES))
+         {
+            string symbol = OrderSymbol();
+            if (symbol == _Symbol || symbol == otherPair)
+            {
+               int ticketID = OrderTicket();
+               if (TicketIsInOpenOrders(ticketID))
+                  continue;
+               else
+               {
+                  //store info on this trade and match up with the counter trade
+                  ArrayResize(unmatchedTrades,++numUnMatchedTrades);
+                  OrderInfo *thisTrade = new OrderInfo();
+                  thisTrade.Symbol = symbol;
+                  thisTrade.TicketId = ticketID;
+                  thisTrade.EntryTime = OrderOpenTime();
+                  thisTrade.EntryPrice = OrderOpenPrice();
+                  thisTrade.Lots = OrderLots();
+                  thisTrade.OrderType = OrderType();
+                  thisTrade.StopLoss = OrderStopLoss();
+                  thisTrade.TakeProfit = OrderTakeProfit();
+                  unmatchedTrades[numUnMatchedTrades-1] = thisTrade;
+               }
+            }
+         }
      }
-   if (countThisSymbol <= countOtherSymbol)
-      numberOfOpenTrades = countThisSymbol;
-   else
-      numberOfOpenTrades = countOtherSymbol;
-   
+     if (numUnMatchedTrades > 1)
+     {
+      FindUnsavedTrades(unmatchedTrades);
+     }
 }
 
 void DeleteAllObjects()
@@ -403,6 +430,7 @@ void HeartBeat(int TimeFrame=PERIOD_H1)
    for(int ix=0;ix<numberOfOpenTrades;ix++)
      {
          CloseOpenPairTrade(openTrades[ix]);
+         delete(openTrades[ix]);
          openTrades[ix] = NULL;
      }
    numberOfOpenTrades = 0;
@@ -413,8 +441,10 @@ void HeartBeat(int TimeFrame=PERIOD_H1)
  void CloseOpenPairTrade(CorrelatedTrade *tradePair)
  {
    CloseTrade(tradePair.BuyTrade);
+   delete(tradePair.BuyTrade);
    tradePair.BuyTrade = NULL;
    CloseTrade(tradePair.SellTrade);
+   delete(tradePair.SellTrade);
    tradePair.SellTrade = NULL;
 
  }
@@ -454,7 +484,6 @@ void HeartBeat(int TimeFrame=PERIOD_H1)
       }
       FileWriteString(fileHandle,  StringFormat("OpenTrade number %i\r\n", tradeIndex));
       FileWriteString(fileHandle, StringFormat("Trade Lots: %f\r\n", tradeToRecord.TradeLots));
-      FileWriteString(fileHandle, StringFormat("Sell %s", tradeToRecord.SellTrade.Symbol));
       RecordTrade(fileHandle, tradeToRecord.SellTrade, "Sell");
       RecordTrade(fileHandle, tradeToRecord.BuyTrade, "Buy");
       FileWriteString(fileHandle, StringFormat( "Divergence Level: %f\r\n", tradeToRecord.divergenceLevel));
@@ -475,3 +504,185 @@ void RecordTrade(const int fileHandle, const OrderInfo *trade, const string dire
    FileWriteString(fileHandle, StringFormat("Take Profit: %f\r\n", trade.TakeProfit));
    FileWriteString(fileHandle, StringFormat("TicketId: %i\r\n", trade.TicketId));
 } 
+
+bool ReadStoredTrades()
+{
+   bool retVal = true;
+   int lastTradeIndex = 0;
+   CorrelatedTrade *thisTrade;
+   int fileHandle = FileOpen(saveFileName, FILE_TXT | FILE_ANSI | FILE_READ);
+   if(fileHandle != -1)
+     {
+      string versionString =FileReadString(fileHandle);
+      string formattedVersion = StringFormat("DataVersion: %i", DFVersion);
+      if (versionString == formattedVersion)
+      {
+      while(!FileIsEnding(fileHandle) && retVal)
+        {
+            string readString = FileReadString(fileHandle);
+            StringReplace(readString, "OpenTrade number ", "");
+            int tradeIndex = (int) StringToInteger(readString);
+            if(tradeIndex > lastTradeIndex)
+            {
+               if (ArrayResize(openTrades, lastTradeIndex) != -1)
+               {
+                  lastTradeIndex = tradeIndex;
+                  thisTrade = openTrades[tradeIndex - 1];
+               }
+               else
+               {
+                  Print("Resizing openTrade array failed during ReadStoredTrades");
+                  retVal = false;
+               }
+               
+            }
+            else
+            {
+               PrintFormat("Storage file is scrambled: tradeIndex %i <= lastTradeIndex %i", tradeIndex, lastTradeIndex);
+               retVal = false;
+            }
+            if (!retVal || !ReadDouble(fileHandle, thisTrade.TradeLots, "Trade Lots: ")) retVal = false; 
+            if (!ReadTrade(fileHandle, thisTrade.SellTrade, "Sell") || !ReadTrade(fileHandle, thisTrade.BuyTrade, "Buy"))
+            {
+               retVal = false;
+            }         
+            if (!ReadDouble(fileHandle, thisTrade.divergenceLevel, "Divergence Level: ")) retVal = false;;
+         }
+      }
+      FileClose(fileHandle);
+      return retVal;
+     }
+     return false;
+}
+
+bool ReadTrade(int fileHandle, OrderInfo *trade, string type)
+{
+   string readString;
+   if (FileIsEnding(fileHandle)) return false;
+   readString = FileReadString(fileHandle);
+   StringReplace(readString, type + " ", "");
+   trade.Symbol = readString;
+   if(!ReadDouble(fileHandle, trade.EntryPrice, "Entry Price: " )) return false;
+   if (FileIsEnding(fileHandle)) return false;
+   readString = FileReadString(fileHandle);
+   StringReplace(readString,"Entry Time: ", "");
+   trade.EntryTime = StringToTime(readString);
+   if(!ReadDouble(fileHandle, trade.StopLoss, "Stop Loss: " )) return false;
+   if(!ReadDouble(fileHandle, trade.TakeProfit, "Take Profit: " )) return false;
+   if (FileIsEnding(fileHandle)) return false;
+   readString = FileReadString(fileHandle);
+   StringReplace(readString,"TicketId: ", "");
+   trade.TicketId = (int) StringToInteger(readString);
+   return true;
+}
+
+bool ReadDouble(int fileHandle, double &target, string formatString)
+{
+   if (FileIsEnding(fileHandle)) return false;
+   string readString = FileReadString(fileHandle);
+   StringReplace(readString, formatString, "");
+   target = StringToDouble(readString);
+   return true;
+}
+bool TicketIsInOpenOrders(int ticket)
+{
+   int openOrderSize = ArrayRange(openTrades, 0);
+   for(int ix=0;ix< openOrderSize;ix++)
+     {
+      if((openTrades[ix].BuyTrade.TicketId == ticket) || (openTrades[ix].SellTrade.TicketId == ticket))
+        {
+         return true;
+        }
+     }
+    return false;
+}
+
+void FindUnsavedTrades(OrderInfo*  &unmatchedTrades[])
+{
+   //Find first (timewise) opened trade
+   int numTrades = ArrayRange(unmatchedTrades, 0);
+   datetime firstTradeTime= unmatchedTrades[0].EntryTime;
+   int indexOfFirstTrade =0;
+   OrderInfo *firstTrade;
+   for(int ix=1;ix<numTrades;ix++)
+     {
+      if (unmatchedTrades[ix].EntryTime < firstTradeTime)
+      {
+         firstTradeTime = unmatchedTrades[ix].EntryTime;
+         indexOfFirstTrade = ix;
+      }
+     }
+   firstTrade = unmatchedTrades[indexOfFirstTrade];
+   //Now remove that one from the array
+   for(int ix=indexOfFirstTrade;ix<--numTrades;ix++)
+     {
+         unmatchedTrades[ix] = unmatchedTrades[ix+1];
+     }
+   ArrayResize(unmatchedTrades, numTrades);
+   // Now find a trade within 60 seconds of that
+   for(int ix=0;ix<numTrades;ix++)
+     {
+      if (unmatchedTrades[ix].EntryTime < firstTradeTime + 60)
+        {
+         if((unmatchedTrades[ix].Symbol == _Symbol && firstTrade.Symbol == otherPair) ||
+            (unmatchedTrades[ix].Symbol == otherPair && firstTrade.Symbol == _Symbol))
+           {
+               CorrelatedTrade *newMatchedTrade = new CorrelatedTrade();
+               newMatchedTrade.TradeLots = unmatchedTrades[ix].Lots; // They should both be the same
+               if (unmatchedTrades[ix].OrderType == OP_BUY)
+               {
+                  newMatchedTrade.BuyTrade = unmatchedTrades[ix];
+                  newMatchedTrade.SellTrade = firstTrade;
+               }
+               else
+               {
+                  newMatchedTrade.SellTrade = unmatchedTrades[ix];
+                  newMatchedTrade.BuyTrade = firstTrade;
+               }
+               // But we don't know what the DivergenceLevel was.  How to figure that out?
+               int newIndex = ArrayRange(openTrades,0);
+               double baseDelta;
+               if(newIndex > 0)  //Then there are already trades there. We can get help.
+                 {   
+                  CorrelatedTrade *trade = openTrades[0];
+                  baseDelta = trade.BuyTrade.EntryPrice - trade.SellTrade.EntryPrice - trade.divergenceLevel;
+                 }
+               //Otherwise, try to get it from a GlobalVariable (passed from DOCP indicator)
+                  else
+                  {
+                     if (GlobalVariableCheck("DOCP_BaseDelta"))
+                     {
+                        baseDelta = GlobalVariableGet("DOCP_BaseDelta");
+                     }
+                     else baseDelta = 0.0;
+                  }
+               if (baseDelta != 0.0)
+                  newMatchedTrade.divergenceLevel = newMatchedTrade.BuyTrade.EntryPrice - newMatchedTrade.SellTrade.EntryPrice - baseDelta;
+               else
+               {
+                  // We'll make a very poor assumption that  this trade was the first one, so it would have been offset by the 
+                  // starting divergenceInterval  
+                  newMatchedTrade.divergenceLevel = divergenceIntervalPoints;
+               }
+               ArrayResize(openTrades, newIndex+1);
+               openTrades[newIndex] = newMatchedTrade;
+               RecordOpenTrade(newIndex);
+               numberOfOpenTrades++;
+               if (MathAbs(lastDivergenceLevel) < MathAbs(newMatchedTrade.divergenceLevel))
+                  lastDivergenceLevel = newMatchedTrade.divergenceLevel;
+               //Now remove unmatchedTrades[ix]
+               for(int jx=ix;jx<numTrades-1;jx++)
+                 {
+                     unmatchedTrades[jx] = unmatchedTrades[jx+1];
+                 }
+               numTrades--;
+               ArrayResize(unmatchedTrades, numTrades);
+           }
+        }
+     }
+     if(numTrades > 1)
+       {
+        //Call this recursively
+        FindUnsavedTrades(unmatchedTrades);
+       }
+}
