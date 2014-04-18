@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "DWH Enterpises"
 #property link      "http://nohypeforexrobotreview.com"
-#property version   "1.11"
+#property version   "1.12"
 #property strict
 #include <stdlib.mqh>
 #include <stderror.mqh> 
@@ -37,7 +37,7 @@ datetime lastOrderOpened = 0;
 
 string Title="Divergence Of Correlated Pairs (DOCP)"; 
 string Prefix="DOCP_EA_";
-string Version="v1.11";
+string Version="v1.12";
 int DFVersion = 1;
 string saveFileName;
 //datetime ExpireDate=D'2041.11.30 00:01';
@@ -54,6 +54,8 @@ double AdjPoint;
 static datetime LastTradeTime=0;
 color TextColor=Goldenrod;
 int debug = 0;
+const int DEBUG_READSTORAGE = 1;
+const int DEBUG_MATCHINGINITIALTRADES = 2;
 bool HeartBeat = true;
 
 //+------------------------------------------------------------------+
@@ -513,10 +515,12 @@ bool ReadStoredTrades()
    int fileHandle = FileOpen(saveFileName, FILE_TXT | FILE_ANSI | FILE_READ);
    if(fileHandle != -1)
      {
+      if (debug & DEBUG_READSTORAGE) PrintFormat("DEBUG: Successfully opened %s for read", saveFileName);
       string versionString =FileReadString(fileHandle);
       string formattedVersion = StringFormat("DataVersion: %i", DFVersion);
       if (versionString == formattedVersion)
       {
+      if (debug & DEBUG_READSTORAGE) PrintFormat("DEBUG: Successfully read correct file version (%i)", DFVersion);
       while(!FileIsEnding(fileHandle) && retVal)
         {
             string readString = FileReadString(fileHandle);
@@ -527,7 +531,8 @@ bool ReadStoredTrades()
                if (ArrayResize(openTrades, lastTradeIndex) != -1)
                {
                   lastTradeIndex = tradeIndex;
-                  thisTrade = openTrades[tradeIndex - 1];
+                  thisTrade = new CorrelatedTrade();
+                  openTrades[tradeIndex - 1] = thisTrade;
                }
                else
                {
@@ -546,10 +551,12 @@ bool ReadStoredTrades()
             {
                retVal = false;
             }         
-            if (!ReadDouble(fileHandle, thisTrade.divergenceLevel, "Divergence Level: ")) retVal = false;;
+            if (!ReadDouble(fileHandle, thisTrade.divergenceLevel, "Divergence Level: ")) retVal = false;
+            if (debug & DEBUG_READSTORAGE) PrintFormat("DEBUG: Successfully read trade # %i", tradeIndex);
          }
       }
       FileClose(fileHandle);
+      if (debug & DEBUG_READSTORAGE) PrintFormat("DEBUG: Closed file.  Returning %s", retVal ? "true" : "false"); 
       return retVal;
      }
      return false;
@@ -562,6 +569,7 @@ bool ReadTrade(int fileHandle, OrderInfo *trade, string type)
    readString = FileReadString(fileHandle);
    StringReplace(readString, type + " ", "");
    trade.Symbol = readString;
+   if(debug & DEBUG_READSTORAGE) PrintFormat("DEBUG: Reading %s trade for %s", type, trade.Symbol);
    if(!ReadDouble(fileHandle, trade.EntryPrice, "Entry Price: " )) return false;
    if (FileIsEnding(fileHandle)) return false;
    readString = FileReadString(fileHandle);
@@ -573,6 +581,7 @@ bool ReadTrade(int fileHandle, OrderInfo *trade, string type)
    readString = FileReadString(fileHandle);
    StringReplace(readString,"TicketId: ", "");
    trade.TicketId = (int) StringToInteger(readString);
+   if(debug & DEBUG_READSTORAGE) PrintFormat("DEBUG: Successfully completed read for %s", trade.Symbol);
    return true;
 }
 
@@ -599,6 +608,9 @@ bool TicketIsInOpenOrders(int ticket)
 
 void FindUnsavedTrades(OrderInfo*  &unmatchedTrades[])
 {
+   if (debug & DEBUG_MATCHINGINITIALTRADES) PrintFormat("DEBUG: Entering FindUnsavedTrades with %i unmatchedTrades", 
+      ArrayRange(unmatchedTrades, 0));
+   
    //Find first (timewise) opened trade
    int numTrades = ArrayRange(unmatchedTrades, 0);
    datetime firstTradeTime= unmatchedTrades[0].EntryTime;
@@ -613,6 +625,9 @@ void FindUnsavedTrades(OrderInfo*  &unmatchedTrades[])
       }
      }
    firstTrade = unmatchedTrades[indexOfFirstTrade];
+   if (debug & DEBUG_MATCHINGINITIALTRADES) 
+      PrintFormat("Found first unmatchedTrade for %s at %s", 
+         firstTrade.Symbol, TimeToString(firstTrade.EntryTime, TIME_DATE|TIME_MINUTES | TIME_SECONDS));
    //Now remove that one from the array
    for(int ix=indexOfFirstTrade;ix<--numTrades;ix++)
      {
@@ -646,6 +661,9 @@ void FindUnsavedTrades(OrderInfo*  &unmatchedTrades[])
                  {   
                   CorrelatedTrade *trade = openTrades[0];
                   baseDelta = trade.BuyTrade.EntryPrice - trade.SellTrade.EntryPrice - trade.divergenceLevel;
+                  if (debug & DEBUG_MATCHINGINITIALTRADES)
+                     PrintFormat("DEBUG: Found baseDelta of %f from existing open trades", baseDelta);
+                     
                  }
                //Otherwise, try to get it from a GlobalVariable (passed from DOCP indicator)
                   else
@@ -653,17 +671,27 @@ void FindUnsavedTrades(OrderInfo*  &unmatchedTrades[])
                      if (GlobalVariableCheck("DOCP_BaseDelta"))
                      {
                         baseDelta = GlobalVariableGet("DOCP_BaseDelta");
+                        if (debug & DEBUG_MATCHINGINITIALTRADES)
+                           PrintFormat("DEBUG: Found baseDelta %f from GlobalVariable", baseDelta);
                      }
                      else baseDelta = 0.0;
                   }
                if (baseDelta != 0.0)
+               {
                   newMatchedTrade.divergenceLevel = newMatchedTrade.BuyTrade.EntryPrice - newMatchedTrade.SellTrade.EntryPrice - baseDelta;
+                  if (debug & DEBUG_MATCHINGINITIALTRADES) PrintFormat("DEBUG: Calculated divergenceLevel of %f", newMatchedTrade.divergenceLevel);
+               }
                else
                {
                   // We'll make a very poor assumption that  this trade was the first one, so it would have been offset by the 
                   // starting divergenceInterval  
                   newMatchedTrade.divergenceLevel = divergenceIntervalPoints;
                }
+               if (debug & DEBUG_MATCHINGINITIALTRADES)
+                  PrintFormat("DEBUG: Adding new correlated trade (Buy %s, Sell %s, Divergence %f)", 
+                     newMatchedTrade.BuyTrade.Symbol, 
+                     newMatchedTrade.SellTrade.Symbol,
+                     newMatchedTrade.divergenceLevel);
                ArrayResize(openTrades, newIndex+1);
                openTrades[newIndex] = newMatchedTrade;
                RecordOpenTrade(newIndex);

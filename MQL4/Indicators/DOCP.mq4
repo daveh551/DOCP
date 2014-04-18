@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "Copyright 2014, DWH Enterprises"
 #property link      "http://www.nohypeforexrobotreview.com"
-#property version   "1.00"
+#property version   "1.11"
 #property strict
 #property indicator_chart_window
 #property indicator_buffers 1
@@ -201,6 +201,8 @@ void RecordCorrelationValue(double correlationValue)
 }
 void SaveCorrelationValue(double correlationValue)
 {
+   // While we're at it, save it to GlobalVariable for use in the EA
+   GlobalVariableSet("DOCP_BaseDelta", correlationValue);
    int fileHandle = FileOpen(saveFileName, FILE_TXT | FILE_ANSI | FILE_WRITE);
    if (fileHandle != -1)
    {
