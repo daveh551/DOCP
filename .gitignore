@@ -1,6 +1,8 @@
-MQL/Files/
-MQL/Logs/
-MQL/Presets/
-MQL/Projects
+Preset/
+Projects/
+Scripts/
+Logs/
+Files/
 *.ex4
+mqlcache.dat
 
