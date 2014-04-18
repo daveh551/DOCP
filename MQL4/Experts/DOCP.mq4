@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "DWH Enterpises"
 #property link      "http://nohypeforexrobotreview.com"
-#property version   "1.00"
+#property version   "1.11"
 #property strict
 #include <stdlib.mqh>
 #include <stderror.mqh> 
@@ -16,10 +16,10 @@
 #include <CorrelatedPairs.mqh>;
 
 // input parameters
-int DivergenceInterval = 20;
-int MaxIntervals = 5;
-double TradeSize = .2;
-int MaxSlippagePoints = 2;
+input int DivergenceInterval = 20;
+input int MaxIntervals = 5;
+input double TradeSize = .2;
+input int MaxSlippagePoints = 2;
 // global variables
 int numberOfOpenTrades = 0;
 CorrelatedTrade *openTrades[];
@@ -37,7 +37,9 @@ datetime lastOrderOpened = 0;
 
 string Title="Divergence Of Correlated Pairs (DOCP)"; 
 string Prefix="DOCP_EA_";
-string Version="v0.10";
+string Version="v1.11";
+int DFVersion = 1;
+string saveFileName;
 //datetime ExpireDate=D'2041.11.30 00:01';
 
 //double RiskPcnt=1.0;
@@ -76,24 +78,13 @@ int OnInit()
    else
       LotDigits = 0;
 
-   if(GlobalVariableCheck(StringConcatenate(Prefix,"debug")))
-      {
-      debug = (int) GlobalVariableGet(StringConcatenate(Prefix,"debug"));
-      }
-
-   if(GlobalVariableCheck(StringConcatenate(Prefix,"HeartBeat")))
-      {
-      if(GlobalVariableGet(StringConcatenate(Prefix,"HeartBeat")) == 1)
-         HeartBeat = true;
-      else
-         HeartBeat = false;
-      }
+   CheckGlobalVariables();
   //---------------------------------------------------- 
 
    divergenceIntervalPoints = DivergenceInterval * FiveDig;
-   if(TradeSize < MarketInfo(_Symbol, MODE_MINLOT))
+   if(TradeSize < MarketInfo(_Symbol, MODE_LOTSIZE))
      {
-      normalizedLotSize = MarketInfo(_Symbol, MODE_MINLOT);
+      normalizedLotSize = MarketInfo(_Symbol, MODE_LOTSIZE);
       Alert("TradeSize has been increased to Minimum LotSize of ", DoubleToStr(normalizedLotSize, LotDigits));
      }
    else
@@ -102,6 +93,8 @@ int OnInit()
    }
    maxSlippageOnEntry = MaxSlippagePoints;
    otherPair = FindCorrelatedPair();
+   saveFileName = Prefix + StringSubstr(_Symbol, 0, 6) + "_" + StringSubstr(otherPair, 0, 6) + "_DivergentTrades.txt";
+   
    FindOpenTrades();
 
 //---
@@ -112,6 +105,7 @@ int OnInit()
 //+------------------------------------------------------------------+
 void OnDeinit(const int reason)
   {
+   DeleteAllObjects();
 //---
    
   }
@@ -120,13 +114,10 @@ void OnDeinit(const int reason)
 //+------------------------------------------------------------------+
 void OnTick()
   {
-   if(!IsNewBar())
-     {
-      return;
-     }
    double divergence = Divergence();
    // Check if we should be opening a new trade
-   if(MathAbs(divergence) > MathAbs(lastDivergenceLevel) + divergenceIntervalPoints * _Point)
+   if ((MathAbs(divergence) > MathAbs(lastDivergenceLevel) + DivergenceInterval)&&
+      numberOfOpenTrades < MaxIntervals)
      {
       OpenTrade(divergence);
      }  
@@ -139,10 +130,30 @@ void OnTick()
          CloseTrades();
       }
    }
+   if(!IsNewBar())
+     {
+      return;
+     }
+   CheckGlobalVariables();
 //---
    
   }
 //+------------------------------------------------------------------+
+void CheckGlobalVariables()
+{
+   if(GlobalVariableCheck(StringConcatenate(Prefix,"debug")))
+      {
+      debug = (int) GlobalVariableGet(StringConcatenate(Prefix,"debug"));
+      }
+
+   if(GlobalVariableCheck(StringConcatenate(Prefix,"HeartBeat")))
+      {
+      if(GlobalVariableGet(StringConcatenate(Prefix,"HeartBeat")) == 1)
+         HeartBeat = true;
+      else
+         HeartBeat = false;
+      }
+}
 double Divergence()
 {
    return (iCustom(_Symbol, PERIOD_M1, "Divergence", 0, 0));
@@ -163,7 +174,7 @@ bool IsNewBar()
 void OpenTrade(double divergence)
 {
    int startingOpenTrades = numberOfOpenTrades;
-   if(divergence > 0)
+   if(divergence < 0)
      {
          OpenTradePair(_Symbol, otherPair);
      }
@@ -177,6 +188,7 @@ void OpenTrade(double divergence)
       lastDivergenceLevel = divergence;
       divergenceCloseLevel = 0.0;
       lastOrderOpened = TimeCurrent();
+      RecordOpenTrade(startingOpenTrades);
     }
 }
 
@@ -415,6 +427,7 @@ void HeartBeat(int TimeFrame=PERIOD_H1)
          MarketInfo(tradeInfo.Symbol, (tradeInfo.OrderType == OP_BUY) ? MODE_BID : MODE_ASK);
       OrderCloseReliable(tradeInfo.TicketId, tradeInfo.Lots, price, 5, clrRed);
    }
+   else
      {
       int err = GetLastError();
       PrintFormat("Unable to close order %i. Failed to Select order: %s (%i)", tradeInfo.TicketId, ErrorDescription(err),err);
@@ -426,3 +439,39 @@ void HeartBeat(int TimeFrame=PERIOD_H1)
  void UpdateDivergenceCloseLevel()
  {
  }
+ 
+ void RecordOpenTrade(int tradeIndex)
+ {
+   int fileHandle = FileOpen(saveFileName, FILE_TXT | FILE_ANSI | FILE_WRITE | FILE_READ);
+   CorrelatedTrade *tradeToRecord = openTrades[tradeIndex];
+   if (fileHandle != -1)
+   {
+      FileSeek(fileHandle, 0, SEEK_END);
+      ulong pos = FileTell(fileHandle);
+      if (pos == 0) //Then this is the first write to this file. Record the DFVersion
+      {
+         FileWriteString(fileHandle, StringFormat("DataVersion: %i\r\n", DFVersion));
+      }
+      FileWriteString(fileHandle,  StringFormat("OpenTrade number %i\r\n", tradeIndex));
+      FileWriteString(fileHandle, StringFormat("Trade Lots: %f\r\n", tradeToRecord.TradeLots));
+      FileWriteString(fileHandle, StringFormat("Sell %s", tradeToRecord.SellTrade.Symbol));
+      RecordTrade(fileHandle, tradeToRecord.SellTrade, "Sell");
+      RecordTrade(fileHandle, tradeToRecord.BuyTrade, "Buy");
+      FileWriteString(fileHandle, StringFormat( "Divergence Level: %f\r\n", tradeToRecord.divergenceLevel));
+      FileClose(fileHandle);
+   }
+   else
+   {
+      Alert("Unable to open File ", saveFileName, ". Error=", GetLastError());
+   }     
+}
+
+void RecordTrade(const int fileHandle, const OrderInfo *trade, const string direction)
+{
+   FileWriteString(fileHandle, StringFormat("%s %s\r\n", direction, trade.Symbol));
+   FileWriteString(fileHandle, StringFormat("Entry Price: %f\r\n", trade.EntryPrice));
+   FileWriteString(fileHandle, StringFormat("Entry Time: %s", TimeToString(trade.EntryTime, TIME_DATE | TIME_MINUTES | TIME_SECONDS)));
+   FileWriteString(fileHandle, StringFormat("Stop Loss: %f\r\n", trade.StopLoss));
+   FileWriteString(fileHandle, StringFormat("Take Profit: %f\r\n", trade.TakeProfit));
+   FileWriteString(fileHandle, StringFormat("TicketId: %i\r\n", trade.TicketId));
+} 
