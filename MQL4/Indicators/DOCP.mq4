@@ -202,7 +202,7 @@ void RecordCorrelationValue(double correlationValue)
 void SaveCorrelationValue(double correlationValue)
 {
    // While we're at it, save it to GlobalVariable for use in the EA
-   GlobalVariableSet("DOCP_BaseDelta", correlationValue);
+   GlobalVariableSet("DOCP_BaseDelta_" + _Symbol + "_" + otherPair, correlationValue);
    int fileHandle = FileOpen(saveFileName, FILE_TXT | FILE_ANSI | FILE_WRITE);
    if (fileHandle != -1)
    {

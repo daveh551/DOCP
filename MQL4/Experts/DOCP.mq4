@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "DWH Enterpises"
 #property link      "http://nohypeforexrobotreview.com"
-#property version   "1.12"
+#property version   "1.13"
 #property strict
 #include <stdlib.mqh>
 #include <stderror.mqh> 
@@ -37,7 +37,7 @@ datetime lastOrderOpened = 0;
 
 string Title="Divergence Of Correlated Pairs (DOCP)"; 
 string Prefix="DOCP_EA_";
-string Version="v1.12";
+string Version="v1.13";
 int DFVersion = 1;
 string saveFileName;
 //datetime ExpireDate=D'2041.11.30 00:01';
@@ -84,9 +84,9 @@ int OnInit()
   //---------------------------------------------------- 
 
    divergenceIntervalPoints = DivergenceInterval * FiveDig;
-   if(TradeSize < MarketInfo(_Symbol, MODE_LOTSIZE))
+   if(TradeSize < MarketInfo(_Symbol, MODE_MINLOT))
      {
-      normalizedLotSize = MarketInfo(_Symbol, MODE_LOTSIZE);
+      normalizedLotSize = MarketInfo(_Symbol, MODE_MINLOT);
       Alert("TradeSize has been increased to Minimum LotSize of ", DoubleToStr(normalizedLotSize, LotDigits));
      }
    else
@@ -501,7 +501,7 @@ void RecordTrade(const int fileHandle, const OrderInfo *trade, const string dire
 {
    FileWriteString(fileHandle, StringFormat("%s %s\r\n", direction, trade.Symbol));
    FileWriteString(fileHandle, StringFormat("Entry Price: %f\r\n", trade.EntryPrice));
-   FileWriteString(fileHandle, StringFormat("Entry Time: %s", TimeToString(trade.EntryTime, TIME_DATE | TIME_MINUTES | TIME_SECONDS)));
+   FileWriteString(fileHandle, StringFormat("Entry Time: %s\r\n", TimeToString(trade.EntryTime, TIME_DATE | TIME_MINUTES | TIME_SECONDS)));
    FileWriteString(fileHandle, StringFormat("Stop Loss: %f\r\n", trade.StopLoss));
    FileWriteString(fileHandle, StringFormat("Take Profit: %f\r\n", trade.TakeProfit));
    FileWriteString(fileHandle, StringFormat("TicketId: %i\r\n", trade.TicketId));
@@ -515,12 +515,12 @@ bool ReadStoredTrades()
    int fileHandle = FileOpen(saveFileName, FILE_TXT | FILE_ANSI | FILE_READ);
    if(fileHandle != -1)
      {
-      if (debug & DEBUG_READSTORAGE) PrintFormat("DEBUG: Successfully opened %s for read", saveFileName);
+      if ((debug & DEBUG_READSTORAGE) != 0) PrintFormat("DEBUG: Successfully opened %s for read", saveFileName);
       string versionString =FileReadString(fileHandle);
       string formattedVersion = StringFormat("DataVersion: %i", DFVersion);
       if (versionString == formattedVersion)
       {
-      if (debug & DEBUG_READSTORAGE) PrintFormat("DEBUG: Successfully read correct file version (%i)", DFVersion);
+      if ((debug & DEBUG_READSTORAGE) != 0) PrintFormat("DEBUG: Successfully read correct file version (%i)", DFVersion);
       while(!FileIsEnding(fileHandle) && retVal)
         {
             string readString = FileReadString(fileHandle);
@@ -552,11 +552,11 @@ bool ReadStoredTrades()
                retVal = false;
             }         
             if (!ReadDouble(fileHandle, thisTrade.divergenceLevel, "Divergence Level: ")) retVal = false;
-            if (debug & DEBUG_READSTORAGE) PrintFormat("DEBUG: Successfully read trade # %i", tradeIndex);
+            if ((debug & DEBUG_READSTORAGE) != 0) PrintFormat("DEBUG: Successfully read trade # %i", tradeIndex);
          }
       }
       FileClose(fileHandle);
-      if (debug & DEBUG_READSTORAGE) PrintFormat("DEBUG: Closed file.  Returning %s", retVal ? "true" : "false"); 
+      if ((debug & DEBUG_READSTORAGE) != 0) PrintFormat("DEBUG: Closed file.  Returning %s", retVal ? "true" : "false"); 
       return retVal;
      }
      return false;
@@ -569,7 +569,7 @@ bool ReadTrade(int fileHandle, OrderInfo *trade, string type)
    readString = FileReadString(fileHandle);
    StringReplace(readString, type + " ", "");
    trade.Symbol = readString;
-   if(debug & DEBUG_READSTORAGE) PrintFormat("DEBUG: Reading %s trade for %s", type, trade.Symbol);
+   if((debug & DEBUG_READSTORAGE) != 0) PrintFormat("DEBUG: Reading %s trade for %s", type, trade.Symbol);
    if(!ReadDouble(fileHandle, trade.EntryPrice, "Entry Price: " )) return false;
    if (FileIsEnding(fileHandle)) return false;
    readString = FileReadString(fileHandle);
@@ -581,7 +581,7 @@ bool ReadTrade(int fileHandle, OrderInfo *trade, string type)
    readString = FileReadString(fileHandle);
    StringReplace(readString,"TicketId: ", "");
    trade.TicketId = (int) StringToInteger(readString);
-   if(debug & DEBUG_READSTORAGE) PrintFormat("DEBUG: Successfully completed read for %s", trade.Symbol);
+   if((debug & DEBUG_READSTORAGE) != 0) PrintFormat("DEBUG: Successfully completed read for %s", trade.Symbol);
    return true;
 }
 
@@ -608,7 +608,7 @@ bool TicketIsInOpenOrders(int ticket)
 
 void FindUnsavedTrades(OrderInfo*  &unmatchedTrades[])
 {
-   if (debug & DEBUG_MATCHINGINITIALTRADES) PrintFormat("DEBUG: Entering FindUnsavedTrades with %i unmatchedTrades", 
+   if ((debug & DEBUG_MATCHINGINITIALTRADES) != 0) PrintFormat("DEBUG: Entering FindUnsavedTrades with %i unmatchedTrades", 
       ArrayRange(unmatchedTrades, 0));
    
    //Find first (timewise) opened trade
@@ -625,11 +625,12 @@ void FindUnsavedTrades(OrderInfo*  &unmatchedTrades[])
       }
      }
    firstTrade = unmatchedTrades[indexOfFirstTrade];
-   if (debug & DEBUG_MATCHINGINITIALTRADES) 
+   if ((debug & DEBUG_MATCHINGINITIALTRADES) != 0) 
       PrintFormat("Found first unmatchedTrade for %s at %s", 
          firstTrade.Symbol, TimeToString(firstTrade.EntryTime, TIME_DATE|TIME_MINUTES | TIME_SECONDS));
    //Now remove that one from the array
-   for(int ix=indexOfFirstTrade;ix<--numTrades;ix++)
+   numTrades--;
+   for(int ix=indexOfFirstTrade;ix<numTrades;ix++)
      {
          unmatchedTrades[ix] = unmatchedTrades[ix+1];
      }
@@ -661,17 +662,17 @@ void FindUnsavedTrades(OrderInfo*  &unmatchedTrades[])
                  {   
                   CorrelatedTrade *trade = openTrades[0];
                   baseDelta = trade.BuyTrade.EntryPrice - trade.SellTrade.EntryPrice - trade.divergenceLevel;
-                  if (debug & DEBUG_MATCHINGINITIALTRADES)
+                  if ((debug & DEBUG_MATCHINGINITIALTRADES) != 0)
                      PrintFormat("DEBUG: Found baseDelta of %f from existing open trades", baseDelta);
                      
                  }
                //Otherwise, try to get it from a GlobalVariable (passed from DOCP indicator)
                   else
                   {
-                     if (GlobalVariableCheck("DOCP_BaseDelta"))
+                     if (GlobalVariableCheck("DOCP_BaseDelta_" + _Symbol + "_" + otherPair))
                      {
-                        baseDelta = GlobalVariableGet("DOCP_BaseDelta");
-                        if (debug & DEBUG_MATCHINGINITIALTRADES)
+                        baseDelta = GlobalVariableGet("DOCP_BaseDelta_" + _Symbol + "_" + otherPair);
+                        if ((debug & DEBUG_MATCHINGINITIALTRADES) != 0)
                            PrintFormat("DEBUG: Found baseDelta %f from GlobalVariable", baseDelta);
                      }
                      else baseDelta = 0.0;
@@ -679,7 +680,7 @@ void FindUnsavedTrades(OrderInfo*  &unmatchedTrades[])
                if (baseDelta != 0.0)
                {
                   newMatchedTrade.divergenceLevel = newMatchedTrade.BuyTrade.EntryPrice - newMatchedTrade.SellTrade.EntryPrice - baseDelta;
-                  if (debug & DEBUG_MATCHINGINITIALTRADES) PrintFormat("DEBUG: Calculated divergenceLevel of %f", newMatchedTrade.divergenceLevel);
+                  if ((debug & DEBUG_MATCHINGINITIALTRADES) != 0) PrintFormat("DEBUG: Calculated divergenceLevel of %f", newMatchedTrade.divergenceLevel);
                }
                else
                {
@@ -687,7 +688,7 @@ void FindUnsavedTrades(OrderInfo*  &unmatchedTrades[])
                   // starting divergenceInterval  
                   newMatchedTrade.divergenceLevel = divergenceIntervalPoints;
                }
-               if (debug & DEBUG_MATCHINGINITIALTRADES)
+               if ((debug & DEBUG_MATCHINGINITIALTRADES) != 0)
                   PrintFormat("DEBUG: Adding new correlated trade (Buy %s, Sell %s, Divergence %f)", 
                      newMatchedTrade.BuyTrade.Symbol, 
                      newMatchedTrade.SellTrade.Symbol,
