@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "DWH Enterpises"
 #property link      "http://nohypeforexrobotreview.com"
-#property version   "1.13"
+#property version   "1.14"
 #property strict
 #include <stdlib.mqh>
 #include <stderror.mqh> 
@@ -37,7 +37,7 @@ datetime lastOrderOpened = 0;
 
 string Title="Divergence Of Correlated Pairs (DOCP)"; 
 string Prefix="DOCP_EA_";
-string Version="v1.13";
+string Version="v1.14";
 int DFVersion = 1;
 string saveFileName;
 //datetime ExpireDate=D'2041.11.30 00:01';
@@ -137,6 +137,7 @@ void OnTick()
       return;
      }
    CheckGlobalVariables();
+   DisplayStatus();
 //---
    
   }
@@ -297,6 +298,48 @@ void DrawVersion()
    ObjectSet(name,OBJPROP_YDISTANCE,2);
    } //void DrawVersion()
 
+void DisplayStatus()
+{
+   string name = Prefix + "NumLevelsLabel";
+   long chartId = ChartID();
+   if (ObjectFind(chartId, name)<0)
+   {
+   ObjectCreate(chartId,name, OBJ_LABEL, 0, 0 ,0); 
+   ObjectSetText(name, "Number of Levels Active:", 12, NULL, clrAqua);
+   ObjectSetInteger(chartId, name, OBJPROP_CORNER, CORNER_LEFT_LOWER);
+   ObjectSetInteger(chartId, name, OBJPROP_XDISTANCE, 5);
+   ObjectSetInteger(chartId, name, OBJPROP_YDISTANCE, 40);
+   }
+   name =  Prefix + "NumLevelsText";
+   if (ObjectFind(chartId, name) <0)
+   {
+      ObjectCreate(chartId, name,  OBJ_LABEL, 0, 0 , 0);
+      ObjectSetInteger(chartId, name, OBJPROP_CORNER, CORNER_LEFT_LOWER);
+      ObjectSetInteger(chartId, name, OBJPROP_XDISTANCE, 300);
+      ObjectSetInteger(chartId, name, OBJPROP_YDISTANCE, 40);
+   }
+   ObjectSetText(name, IntegerToString(numberOfOpenTrades), 12, NULL, clrAqua);
+   
+   name = Prefix + "LastDivergenceLabel";
+   if (ObjectFind(chartId, name) < 0)
+   {
+      ObjectCreate(chartId, name, OBJ_LABEL, 0, 0, 0);
+      ObjectSetText(name, "Last Divergence Level Traded:", 12, NULL, clrAqua);
+      ObjectSetInteger(chartId, name, OBJPROP_CORNER,  CORNER_LEFT_LOWER);
+      ObjectSetInteger(chartId, name, OBJPROP_XDISTANCE, 5);
+      ObjectSetInteger(chartId, name, OBJPROP_YDISTANCE, 70);
+   }
+   
+   name = Prefix + "LastDivergenceText";
+   if (ObjectFind(chartId,name) < 0)
+   {
+      ObjectCreate(chartId, name, OBJ_LABEL, 0, 0, 0);
+      ObjectSetInteger(chartId, name, OBJPROP_CORNER, CORNER_LEFT_LOWER);
+      ObjectSetInteger(chartId, name, OBJPROP_XDISTANCE, 300);
+      ObjectSetInteger(chartId, name, OBJPROP_YDISTANCE, 70);
+   }
+   ObjectSetText(name, DoubleToStr(lastDivergenceLevel, _Digits), 12, NULL, clrAqua); 
+}
 void SetGV(string VarName,double VarVal)
    {
    string strVarName = StringConcatenate(Prefix,Symbol(),"_",VarName);
@@ -484,7 +527,7 @@ void HeartBeat(int TimeFrame=PERIOD_H1)
       {
          FileWriteString(fileHandle, StringFormat("DataVersion: %i\r\n", DFVersion));
       }
-      FileWriteString(fileHandle,  StringFormat("OpenTrade number %i\r\n", tradeIndex));
+      FileWriteString(fileHandle,  StringFormat("OpenTrade number %i\r\n", tradeIndex + 1));
       FileWriteString(fileHandle, StringFormat("Trade Lots: %f\r\n", tradeToRecord.TradeLots));
       RecordTrade(fileHandle, tradeToRecord.SellTrade, "Sell");
       RecordTrade(fileHandle, tradeToRecord.BuyTrade, "Buy");
@@ -528,7 +571,7 @@ bool ReadStoredTrades()
             int tradeIndex = (int) StringToInteger(readString);
             if(tradeIndex > lastTradeIndex)
             {
-               if (ArrayResize(openTrades, lastTradeIndex) != -1)
+               if (ArrayResize(openTrades, tradeIndex) != -1)
                {
                   lastTradeIndex = tradeIndex;
                   thisTrade = new CorrelatedTrade();
@@ -547,6 +590,7 @@ bool ReadStoredTrades()
                retVal = false;
             }
             if (!retVal || !ReadDouble(fileHandle, thisTrade.TradeLots, "Trade Lots: ")) retVal = false; 
+            thisTrade.SellTrade = new OrderInfo(); thisTrade.BuyTrade = new OrderInfo();
             if (!ReadTrade(fileHandle, thisTrade.SellTrade, "Sell") || !ReadTrade(fileHandle, thisTrade.BuyTrade, "Buy"))
             {
                retVal = false;
