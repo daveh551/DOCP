@@ -5,7 +5,7 @@
 //+------------------------------------------------------------------+
 #property copyright "DWH Enterpises"
 #property link      "http://nohypeforexrobotreview.com"
-#property version   "1.14"
+#property version   "1.15"
 #property strict
 #include <stdlib.mqh>
 #include <stderror.mqh> 
@@ -21,6 +21,9 @@ input int MaxIntervals = 5;
 input double TradeSize = .2;
 input int MaxSlippagePoints = 2;
 // global variables
+int fontSize = 10;
+string fontName = "Arial";
+color fontColor = clrAqua;
 int numberOfOpenTrades = 0;
 CorrelatedTrade *openTrades[];
 datetime lastBarStart = 0;
@@ -37,7 +40,7 @@ datetime lastOrderOpened = 0;
 
 string Title="Divergence Of Correlated Pairs (DOCP)"; 
 string Prefix="DOCP_EA_";
-string Version="v1.14";
+string Version="v1.15";
 int DFVersion = 1;
 string saveFileName;
 //datetime ExpireDate=D'2041.11.30 00:01';
@@ -56,6 +59,7 @@ color TextColor=Goldenrod;
 int debug = 0;
 const int DEBUG_READSTORAGE = 1;
 const int DEBUG_MATCHINGINITIALTRADES = 2;
+const int DEBUG_TRADES = 4;
 bool HeartBeat = true;
 
 //+------------------------------------------------------------------+
@@ -118,9 +122,11 @@ void OnTick()
   {
    double divergence = Divergence();
    // Check if we should be opening a new trade
-   if ((MathAbs(divergence) > MathAbs(lastDivergenceLevel) + DivergenceInterval)&&
+   if ((MathAbs(divergence) > (MathAbs(lastDivergenceLevel) + divergenceIntervalPoints))&&
       numberOfOpenTrades < MaxIntervals)
      {
+      if ((debug &DEBUG_TRADES) != 0)
+         PrintFormat("DEBUG: Opening new  trade at divergence level %f", divergence);
       OpenTrade(divergence);
      }  
    // Check if we should be closing trades
@@ -129,6 +135,8 @@ void OnTick()
       if ((lastDivergenceLevel > 0 && divergence <= divergenceCloseLevel) ||
           (lastDivergenceLevel < 0 && divergence >= divergenceCloseLevel))
       {
+         if ((debug & DEBUG_TRADES) != 0)
+            PrintFormat("DEBUG: Closing %i open trades at divergence %f", numberOfOpenTrades, divergence);
          CloseTrades();
       }
    }
@@ -305,7 +313,7 @@ void DisplayStatus()
    if (ObjectFind(chartId, name)<0)
    {
    ObjectCreate(chartId,name, OBJ_LABEL, 0, 0 ,0); 
-   ObjectSetText(name, "Number of Levels Active:", 12, NULL, clrAqua);
+   SetText(name, "Number of Levels Active:");
    ObjectSetInteger(chartId, name, OBJPROP_CORNER, CORNER_LEFT_LOWER);
    ObjectSetInteger(chartId, name, OBJPROP_XDISTANCE, 5);
    ObjectSetInteger(chartId, name, OBJPROP_YDISTANCE, 40);
@@ -318,13 +326,13 @@ void DisplayStatus()
       ObjectSetInteger(chartId, name, OBJPROP_XDISTANCE, 300);
       ObjectSetInteger(chartId, name, OBJPROP_YDISTANCE, 40);
    }
-   ObjectSetText(name, IntegerToString(numberOfOpenTrades), 12, NULL, clrAqua);
+   SetText(name, IntegerToString(numberOfOpenTrades));
    
    name = Prefix + "LastDivergenceLabel";
    if (ObjectFind(chartId, name) < 0)
    {
       ObjectCreate(chartId, name, OBJ_LABEL, 0, 0, 0);
-      ObjectSetText(name, "Last Divergence Level Traded:", 12, NULL, clrAqua);
+      SetText(name, "Last Divergence Level Traded:");
       ObjectSetInteger(chartId, name, OBJPROP_CORNER,  CORNER_LEFT_LOWER);
       ObjectSetInteger(chartId, name, OBJPROP_XDISTANCE, 5);
       ObjectSetInteger(chartId, name, OBJPROP_YDISTANCE, 70);
@@ -338,7 +346,32 @@ void DisplayStatus()
       ObjectSetInteger(chartId, name, OBJPROP_XDISTANCE, 300);
       ObjectSetInteger(chartId, name, OBJPROP_YDISTANCE, 70);
    }
-   ObjectSetText(name, DoubleToStr(lastDivergenceLevel, _Digits), 12, NULL, clrAqua); 
+   SetText(name, DoubleToStr(lastDivergenceLevel, _Digits));
+   
+   name = Prefix + "CloseLevelLabel";
+   if (ObjectFind(chartId, name) < 0)
+   {
+      ObjectCreate(chartId, name, OBJ_LABEL, 0, 0, 0);
+      ObjectSetInteger(chartId, name, OBJPROP_CORNER, CORNER_LEFT_LOWER);
+      ObjectSetInteger(chartId, name, OBJPROP_XDISTANCE, 5);
+      ObjectSetInteger(chartId, name, OBJPROP_YDISTANCE, 85);
+      SetText(name, "Level to Close Trades: ");
+   }
+   name = Prefix + "CloseLevelText";
+      if (ObjectFind(chartId, name) < 0)
+   {
+      ObjectCreate(chartId, name, OBJ_LABEL, 0, 0, 0);
+      ObjectSetInteger(chartId, name, OBJPROP_CORNER, CORNER_LEFT_LOWER);
+      ObjectSetInteger(chartId, name, OBJPROP_XDISTANCE, 300);
+      ObjectSetInteger(chartId, name, OBJPROP_YDISTANCE, 85);
+   }
+   SetText(name, DoubleToStr(divergenceCloseLevel, _Digits));
+
+}
+
+void SetText(string name, string text)
+{
+   ObjectSetText(name, text, fontSize, fontName, fontColor);
 }
 void SetGV(string VarName,double VarVal)
    {
@@ -595,6 +628,8 @@ bool ReadStoredTrades()
             {
                retVal = false;
             }         
+            thisTrade.SellTrade.Lots = thisTrade.TradeLots;
+            thisTrade.BuyTrade.Lots = thisTrade.TradeLots;
             if (!ReadDouble(fileHandle, thisTrade.divergenceLevel, "Divergence Level: ")) retVal = false;
             if ((debug & DEBUG_READSTORAGE) != 0) PrintFormat("DEBUG: Successfully read trade # %i", tradeIndex);
          }
@@ -723,7 +758,11 @@ void FindUnsavedTrades(OrderInfo*  &unmatchedTrades[])
                   }
                if (baseDelta != 0.0)
                {
-                  newMatchedTrade.divergenceLevel = newMatchedTrade.BuyTrade.EntryPrice - newMatchedTrade.SellTrade.EntryPrice - baseDelta;
+                  double delta = newMatchedTrade.BuyTrade.EntryPrice - newMatchedTrade.SellTrade.EntryPrice;
+                  if ((delta < 0 && baseDelta > 0) || (delta > 0 && baseDelta < 0))
+                     delta *= -1;
+                  newMatchedTrade.divergenceLevel = delta - baseDelta;
+                     
                   if ((debug & DEBUG_MATCHINGINITIALTRADES) != 0) PrintFormat("DEBUG: Calculated divergenceLevel of %f", newMatchedTrade.divergenceLevel);
                }
                else
